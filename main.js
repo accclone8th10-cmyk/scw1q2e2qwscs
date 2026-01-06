@@ -173,3 +173,110 @@ function loop(time) {
 }
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 requestAnimationFrame(loop);
+// ... (Giữ phần đầu: canvas, ctx, WORLD, realms, player) ...
+
+let currentMode = "BE_QUAN"; // Chế độ mặc định
+
+// 2. Hàm chuyển đổi thế giới
+function switchMode(mode) {
+    if (currentMode === mode) return;
+    currentMode = mode;
+
+    // Cập nhật giao diện nút
+    document.querySelectorAll('.menu-btn').forEach(btn => btn.classList.remove('active'));
+    if (mode === 'BE_QUAN') document.getElementById('btn-be-quan').classList.add('active');
+    else document.getElementById('btn-hanh-tau').classList.add('active');
+
+    // Hiệu ứng chuyển cảnh
+    canvas.style.filter = "brightness(0)";
+    setTimeout(() => {
+        player.x = WORLD.width / 2;
+        player.y = WORLD.height / 2;
+        canvas.style.filter = "brightness(1)";
+        
+        // Nếu về Bế Quan thì xóa hết quái cho nhẹ máy
+        if (mode === "BE_QUAN") mobs = [];
+        else { for(let i=0; i<15; i++) spawnMob(); } // Sang Hành Tẩu thì tạo quái
+    }, 300);
+}
+
+// 3. Logic Update (Chỉnh sửa phần tính Linh khí)
+function update(dt) {
+    let modeMult = (currentMode === "BE_QUAN") ? 5.0 : 1.0; // Bế quan nạp gấp 5 lần
+
+    // Di chuyển
+    let dx = 0, dy = 0;
+    if (keys["w"]) dy--; if (keys["s"]) dy++;
+    if (keys["a"]) dx--; if (keys["d"]) dx++;
+
+    if (dx !== 0 || dy !== 0) {
+        const len = Math.hypot(dx, dy);
+        player.x = Math.max(0, Math.min(WORLD.width, player.x + (dx/len) * player.speed * dt));
+        player.y = Math.max(0, Math.min(WORLD.height, player.y + (dy/len) * player.speed * dt));
+        player.state = "move";
+    } else if (player.state !== "cultivate") player.state = "idle";
+
+    // AI Quái vật (Chỉ chạy ở chế độ Hành Tẩu)
+    if (currentMode === "HANH_TAU") {
+        mobs.forEach(mob => {
+            let dist = Math.hypot(player.x - mob.x, player.y - mob.y);
+            if (dist < 400) {
+                let mdx = (player.x - mob.x) / dist;
+                let mdy = (player.y - mob.y) / dist;
+                mob.x += mdx * mob.speed * dt;
+                mob.y += mdy * mob.speed * dt;
+                if (dist < 30) player.hp -= 10 * dt;
+            }
+        });
+    }
+
+    // Tu luyện & Hồi máu
+    const realm = realms[player.realm];
+    let gain = (player.state === "cultivate") ? (WORLD.baseRate * realm.absorb * 3 * modeMult) : (WORLD.baseRate * 0.1 * modeMult);
+    player.linhKhi += gain * dt;
+    if (player.state === "cultivate" && player.hp < player.maxHp) player.hp += 10 * dt;
+
+    camera.x = player.x - canvas.width / 2;
+    camera.y = player.y - canvas.height / 2;
+
+    updateUI(gain, realm);
+}
+
+// 4. Logic Vẽ (Vẽ bản đồ khác nhau)
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(-camera.x, -camera.y);
+
+    if (currentMode === "HANH_TAU") {
+        // Vẽ map.png khi hành tẩu
+        if (mapImg.complete) ctx.drawImage(mapImg, 0, 0, WORLD.width, WORLD.height);
+        else { ctx.fillStyle = "#1a2635"; ctx.fillRect(0, 0, WORLD.width, WORLD.height); }
+        
+        // Vẽ quái
+        mobs.forEach(mob => {
+            ctx.fillStyle = mob.color;
+            ctx.beginPath(); ctx.arc(mob.x, mob.y, mob.size, 0, Math.PI*2); ctx.fill();
+        });
+    } else {
+        // Vẽ nền Động phủ khi Bế quan
+        ctx.fillStyle = "#050a0f";
+        ctx.fillRect(0, 0, WORLD.width, WORLD.height);
+        // Vẽ trận pháp dưới chân
+        ctx.strokeStyle = "#4facfe"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(WORLD.width/2, WORLD.height/2, 150, 0, Math.PI*2); ctx.stroke();
+    }
+
+    // Vẽ Player
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.rotate(player.angle);
+    ctx.strokeStyle = realms[player.realm].color;
+    ctx.strokeRect(-20, -20, 40, 40);
+    ctx.fillStyle = "white"; ctx.fillRect(-18, -18, 36, 36);
+    ctx.restore();
+
+    ctx.restore();
+}
+
+// ... (Các phần còn lại: loop, resize giữ nguyên) ...
